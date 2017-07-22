@@ -73,6 +73,7 @@ def updated() {
 }
 
 def initialize() {
+	log.debug "Initializing...";
 	unsubscribe()
 	unschedule()
 
