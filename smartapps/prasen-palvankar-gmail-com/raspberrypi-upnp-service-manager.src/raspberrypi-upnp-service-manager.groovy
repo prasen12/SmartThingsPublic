@@ -95,67 +95,7 @@ void ssdpSubscribe() {
 	subscribe(location, "ssdpTerm.${appSettings.rpiURN}", ssdpHandler)
 }
 
-Map verifiedDevices() {
-	
-	def devices = getVerifiedDevices()
-	def map = [:]
-	devices.each {
-		def value = it.value.name ?: "UPnP Device ${it.value.ssdpUSN.split(':')[1][-3..-1]}"
-		def key = it.value.mac
-		map["${key}"] = value
-	}
-	map
-}
 
-void verifyDevices() {
-	log.debug "Verify devices"
-	def devices = getDevices().findAll { it?.value?.verified != true }
-	devices.each {
-    	log.debug ">> ${it.value.deviceAddress}"
-		int port = convertHexToInt(it.value.deviceAddress)
-		String ip = convertHexToIP(it.value.networkAddress)
-		String host = "${ip}:${port}"
-        log.debug ">> host = ${host}"
-		sendHubCommand(new physicalgraph.device.HubAction("""GET ${it.value.ssdpPath} HTTP/1.1\r\nHOST: $host\r\n\r\n""", physicalgraph.device.Protocol.LAN, host, [callback: deviceDescriptionHandler]))
-	}
-}
-
-def getVerifiedDevices() {
-	getDevices().findAll{ it.value.verified == true }
-}
-
-def getDevices() {
-	if (!state.devices) {
-		state.devices = [:]
-	}
-	state.devices
-}
-
-def addDevices() {
-	def devices = getDevices()
-
-	selectedDevices.each { dni ->
-		def selectedDevice = devices.find { it.value.mac == dni }
-		def d
-		if (selectedDevice) {
-			d = getChildDevices()?.find {
-				it.deviceNetworkId == selectedDevice.value.mac
-			}
-		}
-
-		if (!d) {
-			log.debug "Creating Generic UPnP Device with dni: ${selectedDevice.value.mac}"
-			addChildDevice("smartthings", "Generic UPnP Device", selectedDevice.value.mac, selectedDevice?.value.hub, [
-				"label": selectedDevice?.value?.name ?: "Generic UPnP Device",
-				"data": [
-					"mac": selectedDevice.value.mac,
-					"ip": selectedDevice.value.networkAddress,
-					"port": selectedDevice.value.deviceAddress
-				]
-			])
-		}
-	}
-}
 
 def ssdpHandler(evt) {
 	log.debug "SSDP handler got ${evt.description}"
@@ -165,35 +105,38 @@ def ssdpHandler(evt) {
 	def parsedEvent = parseLanMessage(description)
 	parsedEvent << ["hub":hub]
 
-	def devices = getDevices()
+    int port = convertHexToInt(parsedEvent.deviceAddress);
+    String ip = convertHexToIP(parsedEvent.networkAddress);
+    String host = "${ip}:${port}"
+    log.debug "Host = ${host}"
 	String ssdpUSN = parsedEvent.ssdpUSN.toString()
-    log.debug "ssdpUSN=${ssdpUSN}"
-	if (devices."${ssdpUSN}") {
-		def d = devices."${ssdpUSN}"
-		if (d.networkAddress != parsedEvent.networkAddress || d.deviceAddress != parsedEvent.deviceAddress) {
-			d.networkAddress = parsedEvent.networkAddress
-			d.deviceAddress = parsedEvent.deviceAddress
-			def child = getChildDevice(parsedEvent.mac)
-			if (child) {
-				child.sync(parsedEvent.networkAddress, parsedEvent.deviceAddress)
-			}
-		}
-	} else {
-		devices << ["${ssdpUSN}": parsedEvent]
-	}
-    log.debug "devices = ${devices}"
+    
+    state.verifiedDevice = parsedEvent;
+    state.verifiedDevice << ["ip": ip]
+    state.verifiedDevice << ["port": port]
+    
+    sendHubCommand(new physicalgraph.device.HubAction("""GET ${parsedEvent.ssdpPath} HTTP/1.1\r\nHOST: $host\r\n\r\n""",
+    				physicalgraph.device.Protocol.LAN, host, [callback: deviceDescriptionHandler]))
 }
 
 void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
 	log.debug "deviceDescriptionHandler"
 	def body = hubResponse.xml
-	def devices = getDevices()
-    log.debug "UDN = ${body.device.UDN.text()}"
-	def device = devices.find { it?.key?.contains(body?.device?.UDN?.text()) }
-    log.debug "Device = ${device}"
-	if (device) {
-		device.value << [name: body?.device?.roomName?.text(), model:body?.device?.modelName?.text(), serialNumber:body?.device?.serialNum?.text(), verified: true]
-	}
+	
+    log.debug "UDN = ${body.device.UDN.text()}, name=${body.device.friendlyName}"
+    
+    def device = addChildDevice("prasen.palvankar@gmail.com", "RaspberryPi", state.verifiedDevice.mac, state.verifiedDevice.hub,[
+    "label": body.device.friendlyName.toString(),
+    "data" : [
+    	"ip": state.verifiedDevice.ip,
+        "port": state.verifiedDevice.port,
+        "mac": state.verifiedDevice.mac
+    ]
+    ]);	
+    
+    log.debug "${device}"
+    device.getHealth();
+    
 }
 
 private Integer convertHexToInt(hex) {
