@@ -19,32 +19,31 @@ metadata {
 		capability "Sensor"
 		capability "Switch"
         attribute "cpuTemp", "number"
+        attribute "cpuLoad", "number"
        
 	}
 
 	
 
-	tiles {
+	tiles(scale:2 ){
     		standardTile("switchTile", "device.switch", width: 2, height: 2,
                  canChangeIcon: true) {
                 state "off", label: '${name}', action: "switch.on",
-                      icon: "st.Outdoor.outdoor12", backgroundColor: "#ffffff"
+                      icon: "st.Outdoor.outdoor13", backgroundColor: "#ffffff"
                 state "on", label: '${name}', action: "switch.off",
-                      icon: "st.Outdoor.outdoor12", backgroundColor: "#E60000"
+                      icon: "st.Outdoor.outdoor13", backgroundColor: "#E60000"
     		}
-            valueTile("powerTile", "device.cpuTemp", decoration: "flat") {
-                      state "power", label:'${currentValue} F'
-            }
-            standardTile("refreshTile", "device.power", decoration: "ring") {
-                state "default", label:'', action:"refresh.refresh",
-                      icon:"st.secondary.refresh"
-    }
+          
+           childDeviceTile("irrigationStation1", "station1", height: 2, width: 2, childTileName: "irrigationStation")
+           childDeviceTile("irrigationStation2", "station2", height: 2, width: 2, childTileName: "irrigationStation")
+          //main (['switchTile', 'irrigationStation'])
+          //details (['switchTile', 'irrigationStationTile', 'switchTile2'])
+	}
 
-    main "switchTile"
-    details(["switchTile","powerTile","refreshTile"])
+    
 }
 	
-}
+
 
 
 
@@ -60,37 +59,164 @@ def parse(String description) {
     def status = msg.status          // => http status code of the response
     def json = msg.json              // => any JSON included in response body, as a data structure of lists and maps
 
-    log.debug("Temp = ${json.data.value}")
-    def cpuEvent = createEvent(name: "cpuTemp", value: json.data.value);
-    def switchEvent = createEvent(name: "switch", value: "off");
+	def cpuEvent;
+    def loadEvent;
+    log.debug("Temp = ${json}")
+   /** if (json.type == 'pi.health') {
+    	log.debug("Creating cpu data events, temp = ${json.data.cpuTemp}");
+    	cpuEvent = createEvent(name: "cpuTemp", value: json.data.cpuTemp);
+        loadEvent = createEvent(name: "cpuLoad", value: json.data.load.last1);
+    }**/
+    switch (json.type) {
+    	case ('pi.health'):
+            log.debug("Creating cpu data events, temp = ${json.data.cpuTemp}");
+            cpuEvent = createEvent(name: "cpuTemp", value: json.data.cpuTemp);
+            loadEvent = createEvent(name: "cpuLoad", value: json.data.load.last1);
+            break;
+        case ('controller.irrigation.stations'):
+        	log.debug "Received list of irrigation stations ${json.data}, child devices created = ${state.childDevicesCreated}"
+            if (getChildDevices().size() == 0){
+            	state.createdDevices = [:];
+            	createChildDevices(json.data.stations, state.createdDevices);
+                state.childDevicesCreated = true;
+            }
+            break;
+        case ('controller.irrigation.state'):
+        	log.debug "Received state for irrigation station ${json.data}"
+            log.debug ("Child devices = ${state.childDevices}, ${state.createdDevices}")
+            
+            def cd = getChildDevices();
+            
+          	for (d in cd) {
+            	if (d.currentValue("stationId") == json.data.id) {
+                	d.sendEvent(name: "switch", value: json.data.status);
+                }
+            }
+            break;
+    }
+    
 	
-    return [cpuEvent, switchEvent]
+    return [cpuEvent, loadEvent]
+}
+
+def createChildDevices(stations, createdDevices) {
+	log.debug("createChildDevices()");
+	for (station in stations) {
+    	log.debug "Creating child device for irrigation station ${station}"
+    	def childDevice = addChildDevice(
+							"Rpi Irrigation Station",
+							"${device.deviceNetworkId}.${station.id}",
+							null,
+							[completedSetup: true, label: "${device.label} (Irrigation Station)", componentName: station.id, componentLabel: "Irrigiation Station"])
+      childDevice.sendEvent(name: "stationId", value: station.id);
+    }
+}
+
+def installed() {
+	log.debug "Setting up child devices"
+    log.debug "Device is ${device.displayName}"
+    state.childDevicesCreated = false;
+    
+    /**
+  	 addChildDevice(
+							"Rpi Irrigation Station",
+							"${device.deviceNetworkId}.station1",
+							null,
+							[completedSetup: true, label: "${device.label} (Irrigation Station)", componentName: "irrigationStation", componentLabel: "Irrigiation Station"])
+  */
+   getStations();
+   
 }
 
 // handle commands
 def on() {
 	log.debug "Executing 'on' , device.switch = ${state['switch']}"
 	def ip = getDataValue("ip");
-    log.debug "${ip}"
-    executeActions("on")
+    sendEvent(name: "switch", value: "on")   
     
-	// TODO: handle 'on' command
+    executeActions("on")
 }
 
 def off() {
-	log.debug "Executing 'off', device.switch = "	   
+	log.debug "Executing 'off', device.switch = "	
+    sendEvent(name: "switch", value: "off")
 	executeActions("off")
 }
 
+def turnStationOn(station) {
+	log.debug "Turning station on "
+    def hubAction = new physicalgraph.device.HubAction(
+    	method: "PUT",      
+        path: "/api/irrigation/stations/${station}",
+        headers: [
+        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        ],
+        body: [
+        	action: "on"
+        ]
+    )
+    log.debug("Action ${hubAction}");
+   	sendHubCommand(hubAction)
+}
+
+def turnStationOff(station) {
+	log.debug "Turning station off "
+   def hubAction = new physicalgraph.device.HubAction(
+    	[method: "PUT",      
+        path: "/api/irrigation/stations/${station}",
+        headers: [
+        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        ],
+        body: [
+        	action: "off"
+        ]
+        
+        ]
+    )
+    log.debug("Action ${hubAction}");
+  	sendHubCommand(hubAction)
+}
+
 def executeActions(action) {
+	def method= "GET"
+    def path = "/api/irrigation/stations/station1"
+          
+    log.debug("Invoking Rpi method = ${method}, path = ${path}")
 	def result = new physicalgraph.device.HubAction(
-    	method: "GET",      
-        path: "/cpuTemp",
+    	method: method,      
+        path: path,
         headers: [
         	HOST: getDataValue("ip") + ":" + getDataValue("port")
         ]
     )
+    log.debug result
     result
     
 }
 
+def getStations() {
+	log.debug "getStations()"
+	def hubAction = new physicalgraph.device.HubAction(
+    	method: "GET",      
+        path: "/api/irrigation/stations",
+        headers: [
+        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        ]
+    )
+   	return hubAction
+    
+}
+
+def getHost() {
+	if (device.displayName == 'Virtual') 
+    	return "10.0.0.36:9000"
+    else
+		return(getDataValue("ip") + ":" + getDataValue("port"));
+}
+
+void calledBackHandler(physicalgraph.device.HubResponse hubResponse) {
+    log.debug "Entered calledBackHandler()..."
+  
+    
+    log.debug "body in calledBackHandler() is: ${hubResponse}"
+}
