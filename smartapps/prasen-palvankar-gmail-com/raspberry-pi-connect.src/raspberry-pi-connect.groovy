@@ -1,5 +1,5 @@
 /**
- *  RaspberryPi Connect Service Manager
+ *  RaspberryPi (Connect)
  *
  *  Copyright 2017 Prasen Palvankar
  *
@@ -13,14 +13,23 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  */
+definition(
+    name: "RaspberryPi (Connect)",
+    namespace: "prasen12",
+    author: "Prasen Palvankar",
+    description: "Control Raspberry Pi and components connected to it",
+    category: "My Apps",
+    iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
+    iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
+    iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png")
+
 
 /**
  * Adapted from bose-soundtouch-connect
  * */
-
 definition(
     name: "Raspberry Pi (Connect)",
-    namespace: "prasen12",
+    namespace: "prasen.palvankar@gmail.com",
     author: "Prasen Palvankar",
     description: "Control your Raspberry Pi services",
     category: "My Apps",
@@ -28,7 +37,9 @@ definition(
     iconX2Url: "https://www.raspberrypi.org/app/uploads/2011/10/Raspi-PGB001.png",
     iconX3Url: "https://www.raspberrypi.org/app/uploads/2011/10/Raspi-PGB001.png",
     singleInstance: true
+
 )
+
 
 preferences {
     page(name:"deviceDiscovery", title:"Device Setup", content:"deviceDiscovery", refreshTimeout:5)
@@ -38,7 +49,7 @@ preferences {
  * Get the urn that for our RaspberryPi
  *
  */
-def getDeviceType() {
+def getDeviceTypeURN() {
     return "urn:schemas-upnp-org:device:RaspberryPiDevice:1"
 }
 
@@ -70,6 +81,7 @@ def getNameSpace() {
  */
 def deviceDiscovery()
 {
+	log.debug "deviceDiscovery()"
     def refreshInterval = 3 // Number of seconds between refresh
     int deviceRefreshCount = !state.deviceRefreshCount ? 0 : state.deviceRefreshCount as int
     state.deviceRefreshCount = deviceRefreshCount + refreshInterval
@@ -78,8 +90,9 @@ def deviceDiscovery()
     def numFound = devices.size() ?: 0
 
     // Make sure we get location updates (contains LAN data such as SSDP results, etc)
-    subscribeNetworkEvents()
-
+    // cribeNetworkEvents()
+	ssdpSubscribe()
+    
     //device discovery request every 15s
     if((deviceRefreshCount % 15) == 0) {
         discoverDevices()
@@ -141,7 +154,7 @@ def initialize() {
     if (selecteddevice) {
         addDevice()
         refreshDevices()
-        subscribeNetworkEvents(true)
+        //subcribeNetworkEvents(true)
     }
 }
 
@@ -174,7 +187,15 @@ def addDevice(){
             }
             d = addChildDevice(getNameSpace(), getDeviceName(),
                 dni, newDevice?.value.hub, 
-                [label:"${deviceName}"]
+                [label:"${deviceName}",
+                 data:[
+                 	mac: newDevice?.value?.mac,
+            		ip: convertHexToIP(newDevice?.value?.networkAddress),
+            		port: convertHexToInt(newDevice?.value?.deviceAddress)                
+                 ]
+                
+                
+                ]
             )
             
             log.trace "Created ${d.displayName} with id $dni"
@@ -204,56 +225,18 @@ def resolveDNI2Address(dni) {
 
 
 /**
- * Handles SSDP description file.
- *
- * @param xmlData
- */
-private def parseDESC(xmlData) {
-    log.info "parseDESC()"
-
-    def devicetype = getDeviceType().toLowerCase()
-    def devicetxml = body.device.deviceType.text().toLowerCase()
-
-    // Make sure it's the type we want
-    if (devicetxml == devicetype) {
-        def devices = getDevices()
-        def device = devices.find {it?.key?.contains(xmlData?.device?.UDN?.text())}
-        if (device && !device.value?.verified) {
-            // Unlike regular DESC, we cannot trust this just yet, parseINFO() decides all
-            device.value << [name:xmlData?.device?.friendlyName?.text(),model:xmlData?.device?.modelName?.text(), serialNumber:xmlData?.device?.serialNum?.text()]
-        } else {
-            log.error "parseDESC(): The xml file returned a device that didn't exist"
-        }
-    }
-}
-
-/**
- * Handle BOSE <info></info> result. This is an alternative to
- * using the SSDP description standard. Some of the speakers do
- * not support SSDP description, so we need this as well.
- *
- * @param xmlData
- */
-private def parseINFO(xmlData) {
-    log.info "parseINFO()"
-    def devicetype = getDeviceType().toLowerCase()
-
-    def deviceID = xmlData.attributes()['deviceID']
-    def device = getDevices().find {it?.key?.contains(deviceID)}
-    if (device && !device.value?.verified) {
-        device.value << [name:xmlData?.name?.text(),model:xmlData?.type?.text(), serialNumber:xmlData?.serialNumber?.text(), "deviceID":deviceID, verified: true]
-    }
-}
-
-/**
  * Handles SSDP discovery messages and adds them to the list
  * of discovered devices. If it already exists, it will update
  * the port and location (in case it was moved).
  *
  * @param lanEvent
  */
-def parseSSDP(lanEvent) {
+def ssdpHandler(evt) {
     //SSDP DISCOVERY EVENTS
+    def lanEvent = parseLanMessage(evt.description)
+    lanEvent << ["hub":evt?.hubId]
+
+    log.debug "parseSSDP ${lanEvent}"
     def USN = lanEvent.ssdpUSN.toString()
     def devices = getDevices()
 
@@ -303,7 +286,7 @@ private refreshDevices() {
  * Starts a subscription for network events
  *
  * @param force If true, will unsubscribe and subscribe if necessary (Optional, default false)
- */
+ *
 private subscribeNetworkEvents(force=false) {
     if (force) {
         unsubscribe()
@@ -315,13 +298,21 @@ private subscribeNetworkEvents(force=false) {
         state.subscribe = true
     }
 }
+*/
+
+
+void ssdpSubscribe() {
+	subscribe(location, "ssdpTerm.${getDeviceTypeURN()}", ssdpHandler)
+}
+
+
 
 /**
  * Issues a SSDP M-SEARCH over the LAN for a specific type (see getDeviceType())
  */
 private discoverDevices() {
     log.trace "discoverDevice() Issuing SSDP request"
-    sendHubCommand(new physicalgraph.device.HubAction("lan discovery ${getDeviceType()}", physicalgraph.device.Protocol.LAN))
+    sendHubCommand(new physicalgraph.device.HubAction("lan discovery ${getDeviceTypeURN()}", physicalgraph.device.Protocol.LAN))
 }
 
 /**
@@ -329,6 +320,7 @@ private discoverDevices() {
  * request for each of them (basically calling verifyDevice() per unverified)
  */
 private verifyDevices() {
+	log.debug "verifyDevices() - devices = ${getDevices()}"
     def devices = getDevices().findAll { it?.value?.verified != true }
 
     devices.each {
@@ -356,6 +348,8 @@ private verifyDevices() {
  * @note Result is captured in locationHandler()
  */
 private verifyDevice(String deviceNetworkId, String ip, int port, String devicessdpPath) {
+	log.debug("Verify device = ${deviceNetworkId}, ${ip}:${port}, ${devicessdpPath}")
+    
     if(ip) {
         def address = ip + ":" + port
         sendHubCommand(new physicalgraph.device.HubAction([
@@ -363,18 +357,40 @@ private verifyDevice(String deviceNetworkId, String ip, int port, String devices
                     path: devicessdpPath,
                     headers: [
                         HOST: address,
-                    ]]))
+                    ]],null, [callback: deviceDescriptionHandler]))
     } else {
         log.warn("verifyDevice() IP address was empty")
     }
 }
 
+
+void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
+	log.debug "deviceDescriptionHandler()"
+	def xmlData = hubResponse.xml
+	
+    log.debug "UDN = ${xmlData.device.UDN.text()}, name=${xmlData.device.friendlyName}"
+    
+    def devices = getDevices()
+    def device = devices.find {it?.key?.contains(xmlData?.device?.UDN?.text())}
+    if (device && !device.value?.verified) {
+        	device.value << [name:xmlData?.device?.friendlyName?.text(),
+            				model:xmlData?.device?.modelName?.text(),
+                            serialNumber:xmlData?.device?.serialNum?.text(),
+                            verified: true
+                            ]
+                            
+        } else {
+            log.error "deviceDescriptionHandler(): The xml file returned a device that didn't exist"
+        }
+    }
+   
 /**
  * Returns an array of devices which have been verified
  *
  * @return array of verified devices
  */
 def getVerifiedDevices() {
+	log.debug "getVerifiedDevices()"
     getDevices().findAll{ it?.value?.verified == true }
 }
 
@@ -384,6 +400,7 @@ def getVerifiedDevices() {
  * @return array of devices
  */
 def getDevices() {
+	log.debug "getDevices() - ${state.devices}"
     state.devices = state.devices ?: [:]
 }
 
@@ -448,18 +465,15 @@ private List getRealHubFirmwareVersions()
  * registered.
  *
  * @param evt Holds event information
- */
+ *
 def onLocation(evt) {
     // Convert the event into something we can use
     def lanEvent = parseLanMessage(evt.description, true)
     lanEvent << ["hub":evt?.hubId]
-
+	log.debug "received hub event: ${lanEvent}"
+    
     // Determine what we need to do...
-    if (lanEvent?.ssdpTerm?.contains(getDeviceType()) &&
-        (getUSNQualifier() == null ||
-            lanEvent?.ssdpUSN?.contains(getUSNQualifier())
-        )
-    )
+    if (lanEvent?.ssdpTerm?.contains(getDeviceType()) )
     {
         parseSSDP(lanEvent)
     }
@@ -478,15 +492,17 @@ def onLocation(evt) {
         }
     }
 }
+*/
 
 /**
  * Define our XML parsers
  *
  * @return mapping of root-node <-> parser function
- */
+ *
 def getParsers() {
     [
         "root" : "parseDESC",
         "info" : "parseINFO"
     ]
 }
+*/
