@@ -116,22 +116,13 @@ def installed() {
 	log.debug "Setting up child devices"
     log.debug "Device is ${device.displayName}"
     state.childDevicesCreated = false;
-    
-    /**
-  	 addChildDevice(
-							"Rpi Irrigation Station",
-							"${device.deviceNetworkId}.station1",
-							null,
-							[completedSetup: true, label: "${device.label} (Irrigation Station)", componentName: "irrigationStation", componentLabel: "Irrigiation Station"])
-  */
-   getStations();
+ 	getStations();
    
 }
 
 // handle commands
 def on() {
 	log.debug "Executing 'on' , device.switch = ${state['switch']}"
-	def ip = getDataValue("ip");
     sendEvent(name: "switch", value: "on")   
     
     executeActions("on")
@@ -149,7 +140,7 @@ def turnStationOn(station) {
     	method: "PUT",      
         path: "/api/irrigation/stations/${station}",
         headers: [
-        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        	HOST: getHost()
         ],
         body: [
         	action: "on"
@@ -165,7 +156,7 @@ def turnStationOff(station) {
     	[method: "PUT",      
         path: "/api/irrigation/stations/${station}",
         headers: [
-        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        	HOST: getHost()
         ],
         body: [
         	action: "off"
@@ -186,7 +177,7 @@ def executeActions(action) {
     	method: method,      
         path: path,
         headers: [
-        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        	HOST: getHost()
         ]
     )
     log.debug result
@@ -200,7 +191,7 @@ def getStations() {
     	method: "GET",      
         path: "/api/irrigation/stations",
         headers: [
-        	HOST: getDataValue("ip") + ":" + getDataValue("port")
+        	HOST: getHost()
         ]
     )
    	return hubAction
