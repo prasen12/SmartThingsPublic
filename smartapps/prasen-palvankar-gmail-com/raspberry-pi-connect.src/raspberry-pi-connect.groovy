@@ -197,10 +197,12 @@ def addDevice(){
                 
                 ]
             )
-            
+            // Save the ip:port to the state -- we will need it to configure the services provided by the device just added
+            state.selectedDeviceHost = convertHexToIP(newDevice?.value?.networkAddress) + ":" + convertHexToInt(newDevice?.value?.deviceAddress)
             log.trace "Created ${d.displayName} with id $dni"
             // sync DTH with device, done here as it currently don't work from the DTH's installed() method
             //d.refresh()
+            getStations()
         } else {
             log.trace "${d.displayName} with id $dni already exists"
         }
@@ -404,6 +406,29 @@ def getDevices() {
     state.devices = state.devices ?: [:]
 }
 
+
+/**
+ * Calls the RPi for a list of services provided by the Pi
+ * Services can be irrigation stations and switches for light control
+ */
+def getServices() {
+	sendHubCommand(new physicalgraph.device.HubAction([
+                    method: "GET",
+                    path: "/api/services",
+                    headers: [
+                        HOST: address,
+                    ]],null, [callback: servicesResponseHandler]))
+}
+
+/**
+ */
+void servicesResponseHandler(physicalgraph.device.HubResponse hubResponse) {
+	log.debug "servicesResponseHandler()"
+	def services = hubResponse.json
+	log.debuf "Service response - ${services}" 
+}
+   
+ 
 /**
  * Converts a hexadecimal string to an integer
  *
