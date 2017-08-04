@@ -40,9 +40,12 @@ definition(
 
 )
 
-
 preferences {
-    page(name:"deviceDiscovery", title:"Device Setup", content:"deviceDiscovery", refreshTimeout:5)
+  page(name: "servicesSelection")
+  page(name:"deviceDiscovery")
+   
+    
+  
 }
 
 /**
@@ -105,10 +108,11 @@ def deviceDiscovery()
 
     log.trace "Discovered devices: ${devices}"
 
-    return dynamicPage(name:"deviceDiscovery", title:"Discovery Started!", nextPage:"", refreshInterval:refreshInterval, install:true, uninstall: true) {
+    return dynamicPage(name:"deviceDiscovery", title:"Discovery Started!", nextPage: "", refreshInterval: refreshInterval, install:true, uninstall: true) {
         section("Please wait while we discover your ${getDeviceName()}. Discovery can take five minutes or more, so sit back and relax! Select your device below once discovered.") {
-            input "selecteddevice", "enum", required:false, title:"Select ${getDeviceName()} (${numFound} found)", multiple:true, options:devices, submitOnChange: true
+            input "selecteddevice", "enum", required:true, title:"Select ${getDeviceName()} (${numFound} found)", multiple:false, options:devices
         }
+        
     }
     
 }
@@ -166,7 +170,7 @@ def initialize() {
 def addDevice(){
     def devices = getVerifiedDevices()
     def devlist
-    log.trace "Adding childs"
+    log.trace "Adding children"
 
     // If only one device is selected, we don't get a list (when using simulator)
     if (!(selecteddevice instanceof List)) {
@@ -198,11 +202,12 @@ def addDevice(){
                 ]
             )
             // Save the ip:port to the state -- we will need it to configure the services provided by the device just added
-            state.selectedDeviceHost = convertHexToIP(newDevice?.value?.networkAddress) + ":" + convertHexToInt(newDevice?.value?.deviceAddress)
+           def selectedDeviceHost = convertHexToIP(newDevice?.value?.networkAddress) + ":" + convertHexToInt(newDevice?.value?.deviceAddress)
             log.trace "Created ${d.displayName} with id $dni"
             // sync DTH with device, done here as it currently don't work from the DTH's installed() method
             //d.refresh()
-            getStations()
+            log.debug "Calling get services..."
+           requestDeviceServices(selectedDeviceHost)
         } else {
             log.trace "${d.displayName} with id $dni already exists"
         }
@@ -406,17 +411,21 @@ def getDevices() {
     state.devices = state.devices ?: [:]
 }
 
-
+def getServices() {
+	log.debug "getServices() - ${state.deviceServices}"
+    state.deviceServices = state.deviceServices ?: []
+}
 /**
  * Calls the RPi for a list of services provided by the Pi
  * Services can be irrigation stations and switches for light control
  */
-def getServices() {
-	sendHubCommand(new physicalgraph.device.HubAction([
+def requestDeviceServices(String host) {
+	log.debug "requestDeviceServices(${host})"
+    sendHubCommand(new physicalgraph.device.HubAction([
                     method: "GET",
                     path: "/api/services",
                     headers: [
-                        HOST: address,
+                        HOST: host,
                     ]],null, [callback: servicesResponseHandler]))
 }
 
@@ -424,11 +433,46 @@ def getServices() {
  */
 void servicesResponseHandler(physicalgraph.device.HubResponse hubResponse) {
 	log.debug "servicesResponseHandler()"
-	def services = hubResponse.json
-	log.debuf "Service response - ${services}" 
+	def response = hubResponse.json
+	log.debug "Service response - ${response}" 
+    state.deviceServices = response.data.services;
+    log.debug "Service response - ${state.deviceServices}" 
 }
    
- 
+def getSelectableServices() {
+	def services = getServices();
+    def map = [:]
+    services.each {
+    log.debug ">>>> ${it}"
+    
+    	if ( it.enabled == true ) {
+            def value = "${it.name}"
+            def key = it.definition
+            map["${key}"] = value
+        }
+       
+    }
+    map
+    
+}
+   
+def servicesSelection()   {
+	log.debug "servicesSelection() page"
+	def refreshInterval = 3;
+    //requestDeviceServices()
+    def services = getSelectableServices()
+    def numFound = services.size() ?: 0
+	dynamicPage(name:"servicesSelection", title:"Select services", install:false, uninstall: true) {
+        section ("Device Selection") {
+        	href "deviceDiscovery",  title: "Select device to use", description: "Tap to open" 
+        }
+        
+        section("Select services to use") {
+            input "selectedServices", "enum", required:true, title:"Select services -  (${numFound} found)", multiple:true, options:services, submitOnChange: true
+        }
+    }
+    
+}
 /**
  * Converts a hexadecimal string to an integer
  *
@@ -483,51 +527,3 @@ private List getRealHubFirmwareVersions()
 {
     return location.hubs*.firmwareVersionString.findAll { it }
 }
-
-/**
- * Called when location has changed, contains information from
- * network transactions. See deviceDiscovery() for where it is
- * registered.
- *
- * @param evt Holds event information
- *
-def onLocation(evt) {
-    // Convert the event into something we can use
-    def lanEvent = parseLanMessage(evt.description, true)
-    lanEvent << ["hub":evt?.hubId]
-	log.debug "received hub event: ${lanEvent}"
-    
-    // Determine what we need to do...
-    if (lanEvent?.ssdpTerm?.contains(getDeviceType()) )
-    {
-        parseSSDP(lanEvent)
-    }
-    else if (
-        lanEvent.headers && lanEvent.body &&
-        lanEvent.headers."content-type"?.contains("xml")
-    )
-    {
-        def parsers = getParsers()
-        def xmlData = new XmlSlurper().parseText(lanEvent.body)
-
-        // Let each parser take a stab at it
-        parsers.each { node,func ->
-            if (xmlData.name() == node)
-                "$func"(xmlData)
-        }
-    }
-}
-*/
-
-/**
- * Define our XML parsers
- *
- * @return mapping of root-node <-> parser function
- *
-def getParsers() {
-    [
-        "root" : "parseDESC",
-        "info" : "parseINFO"
-    ]
-}
-*/
