@@ -15,15 +15,8 @@
  */
 metadata {
 	definition (name: "RaspberryPi", namespace: "prasen12", author: "Prasen Palvankar") {
-		capability "Actuator"
-		capability "Beacon"
-		capability "Buffered Video Capture"
-		capability "Contact Sensor"
-		capability "Image Capture"
-		capability "Motion Sensor"
-		capability "Sensor"
+		capability "Actuator"		
 		capability "Switch"
-		capability "Valve"
         
         attribute "cpuTemp", "number"
         attribute "cpuLoad", "number"
@@ -31,7 +24,8 @@ metadata {
 
 
 	tiles(scale:2 ){
-    		standardTile("switchTile", "device.switch", width: 2, height: 2,
+    
+    		standardTile("switchTile", "device.switch", width: 6, height: 4,
                  canChangeIcon: true) {
                 state "off", label: '${name}', action: "switch.on",
                       icon: "st.Outdoor.outdoor13", backgroundColor: "#ffffff"
@@ -39,8 +33,9 @@ metadata {
                       icon: "st.Outdoor.outdoor13", backgroundColor: "#E60000"
     		}
           
-           childDeviceTile("irrigationStation1", "station1", height: 2, width: 2, childTileName: "irrigationStation")
-           childDeviceTile("irrigationStation2", "station2", height: 2, width: 2, childTileName: "irrigationStation")
+          
+           childDeviceTile("irrigationStation1", "irrigationStation1", height: 4, width: 6, childTileName: "irrigationStation")
+           childDeviceTile("irrigationStation2", "irrigationStation2", height: 4, width: 6, childTileName: "irrigationStation")
           
 	}
 }
@@ -64,11 +59,7 @@ def parse(String description) {
     	
     
         log.debug("Temp = ${json}")
-       /** if (json.type == 'pi.health') {
-            log.debug("Creating cpu data events, temp = ${json.data.cpuTemp}");
-            cpuEvent = createEvent(name: "cpuTemp", value: json.data.cpuTemp);
-            loadEvent = createEvent(name: "cpuLoad", value: json.data.load.last1);
-        }**/
+      
         switch (json.type) {
             case ('pi.health'):
                 log.debug("Creating cpu data events, temp = ${json.data.cpuTemp}");
@@ -111,6 +102,7 @@ def createChildDevices(stations, createdDevices) {
 							null,
 							[completedSetup: true, label: "${device.label} (Irrigation Station)", componentName: station.id, componentLabel: "Irrigiation Station"])
       childDevice.sendEvent(name: "stationId", value: station.id);
+      childDevice.sendEvent(name: "stationName", value: station.name)
     }
 }
 
@@ -156,16 +148,51 @@ def installed() {
 	log.debug "Setting up child devices"
     log.debug "Device is ${device.displayName}"
     state.childDevicesCreated = false;
+   	log.debug("Selected services = ${parent.getSelectedServices()}")
     
-    /**
-  	 addChildDevice(
-							"Rpi Irrigation Station",
-							"${device.deviceNetworkId}.station1",
-							null,
-							[completedSetup: true, label: "${device.label} (Irrigation Station)", componentName: "irrigationStation", componentLabel: "Irrigiation Station"])
-  */
-   getStations();
-   
+ 
+   createChildDevices1()
+}
+
+def createChildDevices1() {	
+	def selectedServices = parent.getSelectedServices()
+	log.debug "crateChidDevices1(${selectedServices})"
+	def services = parent.getServices();
+  	 log.debug "All services from parent = ${services}"
+     	 log.debug "selected service 0 = ${selectedServices[0]}"
+     selectedServices.each { selectedService ->
+     	log.debug "Finding service for ${selectedService}"
+     	def service = services.find { service -> 
+        	service.id == selectedService
+     	}
+        if (service != null) {
+        	def deviceType = getDeviceType(service.type)
+            if (deviceType == null) {
+            	log.warn("Service type ${service.type} not yet supported");
+            } else {
+            	log.debug "Creating device of type - ${deviceType}"
+            	def childDevice = addChildDevice(
+							deviceType,
+							"${device.deviceNetworkId}.${service.id}",
+							device.getHub().getId(),
+							[completedSetup: true, label: "${device.label} (${service.name})", componentName: service.id, componentLabel: "${service.name}"])
+      			childDevice.sendEvent(name: "serviceId", value: service.id);
+                childDevice.sendEvent(name: "serviceName", value: service.name)
+                childDevice.updateStatus(service.id);
+                
+            }
+        
+        	
+        }
+     }
+}
+
+
+def getDeviceType(String serviceType) {
+	def deviceTypes = [:];
+    deviceTypes << ['irrigation': 'Raspberry Pi Irrigation Station']
+    //deviceTypes << ['switch': 'Raspberry Pi Switch Control']
+	return deviceTypes[serviceType]
 }
 
 def updated() {

@@ -19,8 +19,9 @@ metadata {
 		capability "Sensor"
 		capability "Switch"
 
-		attribute "stationId", "string"
+		attribute "serviceId", "string"
 		attribute "switchUpdatedOn", "string"
+        attribute "serviceName", "string"
 	}
 
 
@@ -28,11 +29,23 @@ metadata {
 		// TODO: define status and reply messages here
 	}
 
-	tiles {
-		standardTile("irrigationStation", "device.switch", width: 2, height: 2, canChangeIcon: true) {
-			state "off", label: 'Off', action: "switch.on", icon: "st.Outdoor.outdoor12", backgroundColor: "#ffffff", nextState: "on"
-			state "on", label: 'On', action: "switch.off", icon: "st.Outdoor.outdoor12", backgroundColor: "#00A0DC", nextState: "off"
+	tiles(scale: 2) {
+    /**
+		standardTile("irrigationStation1", "device.switch", width: 2, height: 2, canChangeIcon: true) {
+			state "off", action: "switch.on", icon: "st.Outdoor.outdoor12", backgroundColor: "#ffffff", nextState: "on", label: "${stationName} Off"
+			state "on", action: "switch.off", icon: "st.Outdoor.outdoor12", backgroundColor: "#00A0DC", nextState: "off", label: "${stationName} On"
 		}
+**/
+	multiAttributeTile (name: "irrigationStation", type: "generic", width: 6, height: 4) {
+        	tileAttribute("device.state", key: "PRIMARY_CONTROL") {
+            	attributeState ("off", action: "switch.on", icon: "st.Outdoor.outdoor12", backgroundColor: "#00BB00", nextState: "on", label: '${name}')
+				attributeState ("on", action: "switch.off", icon: "st.Outdoor.outdoor12", backgroundColor: "#00A0DC", nextState: "off", label: "On")
+            }
+        	tileAttribute("device.serviceName", key: "SECONDARY_CONTROL") {
+            	attributeState ("serviceName", label: '${currentValue} ', defaultState: true)
+            }
+        
+        }
        
 	//main (["irrigationStation", "basicTile"])
 	}
@@ -40,6 +53,7 @@ metadata {
 
 def installed() {
 	log.debug("Irrigation station device handler, installed as ${device.name}")
+
 	sendEvent(name: "switch", value: "off");
 }
 
@@ -55,13 +69,44 @@ void on() {
 	log.debug "Executing 'on'"
 	sendEvent(name: "switch", value: "on");
     sendEvent(name: "switchUpdatedOn", value: new Date().format('yyyy-M-d hh:mm:ss'))
-    parent.turnStationOn(device.currentValue("stationId"));
+    parent.turnStationOn(device.currentValue("serviceId"));
 }
 
 void off() {
 	log.debug "Executing 'off'"
 	sendEvent(name: "switch", value: "off");
     sendEvent(name: "switchUpdatedOn", value: new Date().format('yyyy-M-d hh:mm:ss'))
-    parent.turnStationOff(device.currentValue("stationId"));
+    parent.turnStationOff(device.currentValue("serviceId"));
 }
 
+def updateStatus(serviceId) {
+	log.debug "Getting station status for  ${serviceId} "
+    def hubAction = new physicalgraph.device.HubAction(
+    	[
+    		method: "GET",      
+        	path: "/api/irrigation/stations/${serviceId}",
+        	headers: [
+        		HOST: parent.getHost()
+        	]
+        ],
+        null,
+        [callback: handleStatusResponse]
+    )
+    log.debug("Action ${hubAction}");
+   	sendHubCommand(hubAction)
+}
+
+def handleStatusResponse(physicalgraph.device.HubResponse hubResponse) {
+	log.debug "handleSatusResponse()"
+	def response = hubResponse.json
+    
+    log.debug("Status response = ${response}")
+    if (response.requestStatus == "OK") {
+    	sendEvent(name: "switch", value: response.data.status);
+		sendEvent(name: "switchUpdatedOn", value: new Date().format('yyyy-M-d hh:mm:ss'))
+    } else {
+    	log.error("Failed to get status for irrigation station ${device.currentValue('serviceId')}")    	
+    }
+    
+
+}
