@@ -13,7 +13,7 @@
  *  for the specific language governing permissions and limitations under the License.
  *
  */
-definition(
+/**definition(
     name: "RaspberryPi (Connect)",
     namespace: "prasen12",
     author: "Prasen Palvankar",
@@ -23,7 +23,7 @@ definition(
     iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
     iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png")
 
-
+**/
 /**
  * Adapted from bose-soundtouch-connect
  * */
@@ -108,7 +108,7 @@ def deviceDiscovery()
 
     log.trace "Discovered devices: ${devices}"
 
-    return dynamicPage(name:"deviceDiscovery", title:"Discovery Started!", nextPage: "", refreshInterval: refreshInterval, install:true, uninstall: true) {
+    return dynamicPage(name:"deviceDiscovery", title:"Discovery Started!", nextPage: "", refreshInterval: refreshInterval, install:false, uninstall: false) {
         section("Please wait while we discover your ${getDeviceName()}. Discovery can take five minutes or more, so sit back and relax! Select your device below once discovered.") {
             input "selecteddevice", "enum", required:true, title:"Select ${getDeviceName()} (${numFound} found)", multiple:false, options:devices
         }
@@ -155,6 +155,7 @@ def uninstalled() {
 def initialize() {
     log.trace "initialize()"
     state.subscribe = false
+    subscribe(location, onLocation)
     if (selecteddevice) {
         addDevice()
         refreshDevices()
@@ -189,25 +190,31 @@ def addDevice(){
             if (!deviceName){ 
                 deviceName = getDeviceName() + "[${newDevice?.value.name}]"
             }
-            d = addChildDevice(getNameSpace(), getDeviceName(),
-                dni, newDevice?.value.hub, 
-                [label:"${deviceName}",
-                 data:[
-                 	mac: newDevice?.value?.mac,
-            		ip: convertHexToIP(newDevice?.value?.networkAddress),
-            		port: convertHexToInt(newDevice?.value?.deviceAddress)                
-                 ]
-                
-                
-                ]
-            )
+            try {
+            	log.trace ("Adding device ${deviceName}")
+                d = addChildDevice(getNameSpace(), getDeviceName(),
+                    dni, newDevice?.value.hub, 
+                    [label:"${deviceName}",
+                     data:[
+                        mac: newDevice?.value?.mac,
+                        ip: convertHexToIP(newDevice?.value?.networkAddress),
+                        port: convertHexToInt(newDevice?.value?.deviceAddress)           
+                     ]
+
+
+                    ]
+                )
+            }
+            catch (e) {
+            	log.error(e)
+            }
+            
             // Save the ip:port to the state -- we will need it to configure the services provided by the device just added
            def selectedDeviceHost = convertHexToIP(newDevice?.value?.networkAddress) + ":" + convertHexToInt(newDevice?.value?.deviceAddress)
             log.trace "Created ${d.displayName} with id $dni"
             // sync DTH with device, done here as it currently don't work from the DTH's installed() method
             //d.refresh()
-            log.debug "Calling get services..."
-           requestDeviceServices(selectedDeviceHost)
+           
         } else {
             log.trace "${d.displayName} with id $dni already exists"
         }
@@ -310,9 +317,13 @@ private subscribeNetworkEvents(force=false) {
 
 void ssdpSubscribe() {
 	subscribe(location, "ssdpTerm.${getDeviceTypeURN()}", ssdpHandler)
+    
 }
 
+def onLocation(evt) {
+	log.debug "onLocation(${evt.value})"
 
+}
 
 /**
  * Issues a SSDP M-SEARCH over the LAN for a specific type (see getDeviceType())
@@ -420,13 +431,19 @@ def getServices() {
  * Services can be irrigation stations and switches for light control
  */
 def requestDeviceServices(String host) {
-	log.debug "requestDeviceServices(${host})"
-    sendHubCommand(new physicalgraph.device.HubAction([
+	if (state.deviceSerivces?.size() > 0 )  {        
+        log.trace("requesteDeviceServices() - services already retrieved ${state.deviceServices}")   	
+
+   } else {
+   		log.debug "requestDeviceServices(${host})"
+    
+    	sendHubCommand(new physicalgraph.device.HubAction([
                     method: "GET",
                     path: "/api/services",
                     headers: [
                         HOST: host,
                     ]],null, [callback: servicesResponseHandler]))
+   }
 }
 
 /**
@@ -447,7 +464,8 @@ def getSelectableServices() {
     
     	if ( it.enabled == true ) {
             def value = "${it.name}"
-            def key = it.definition
+            def key = it.id
+            log.debug "Adding ${key} to selectable services"
             map["${key}"] = value
         }
        
@@ -457,21 +475,46 @@ def getSelectableServices() {
 }
    
 def servicesSelection()   {
-	log.debug "servicesSelection() page"
-	def refreshInterval = 3;
-    //requestDeviceServices()
+	log.debug "servicesSelection() page, selected device = ${selecteddevice}"
+	
+    def hrefTitle = "Select Raspberry Pi to use"
+    
+  	def verifiedDevices = getVerifiedDevices()
+   	def newDevice = verifiedDevices.find { (it.value.mac) == selecteddevice }
+    if (newDevice != null) {
+    	hrefTitle = newDevice.value.name
+        log.debug "Calling get services..."
+        def selectedDeviceHost = convertHexToIP(newDevice?.value?.networkAddress) + ":" + convertHexToInt(newDevice?.value?.deviceAddress)
+        requestDeviceServices(selectedDeviceHost)
+    }
+    
     def services = getSelectableServices()
     def numFound = services.size() ?: 0
-	dynamicPage(name:"servicesSelection", title:"Select services", install:false, uninstall: true) {
+	dynamicPage(name:"servicesSelection", title:"Select services",  refreshInterval: 10, install:true, uninstall: true) {
         section ("Device Selection") {
-        	href "deviceDiscovery",  title: "Select device to use", description: "Tap to open" 
+        	href "deviceDiscovery",  title: hrefTitle, description: "Tap to open" 
         }
         
-        section("Select services to use") {
-            input "selectedServices", "enum", required:true, title:"Select services -  (${numFound} found)", multiple:true, options:services, submitOnChange: true
+        section("Service Selection") {
+        	if (selecteddevice == null) {
+            	paragraph "Once you have selected the Raspberry Pi to connect, you should see the services offered by the device. "
+            } else {
+            	if (numFound > 0) {
+               	 	paragraph "Select services provided by ${newDevice.value.name}."
+                	
+            		input "selectedServices", "enum", required:true, title:"Select services -  (${numFound} found)", multiple:true, options:services, submitOnChange: true
+                } else {
+                	paragraph "Waiting for list of services from ${newDevice.value.name}"
+                }
+            }
         }
     }
     
+}
+
+def getSelectedServices() {
+	
+	return settings.selectedServices;
 }
 /**
  * Converts a hexadecimal string to an integer
