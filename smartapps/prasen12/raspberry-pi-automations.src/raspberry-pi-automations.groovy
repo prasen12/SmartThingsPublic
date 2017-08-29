@@ -16,6 +16,7 @@
 definition(
     name: "Raspberry Pi Automations",
     namespace: "prasen12",
+    parent: "prasen.palvankar@gmail.com:Raspberry Pi (Connect)",
     author: "Prasen Palvankar",
     description: "Automations for services provided by the Raspberry Pi",
     category: "My Apps",
@@ -25,14 +26,16 @@ definition(
 
 
 preferences {
-	section("Title") {
-		// TODO: put inputs here
-	}
+    section("Which Station to Automate?") {
+        input (name: "station", title: "Station", type: "device.raspberryPiIrrigationStation");
+    }    
+    section("At what time?") {
+        input (name: "startTime", title: "Start Time", type:"time");
+    }
 }
 
 def installed() {
-	log.debug "Installed with settings: ${settings}"
-
+	log.debug "Installed with settings: ${settings}"        
 	initialize()
 }
 
@@ -45,6 +48,21 @@ def updated() {
 
 def initialize() {
 	// TODO: subscribe to attributes, devices, locations, etc.
+        state.t ="D";
+}
+
+/**
+ * Pages
+ */
+
+def mainPage() {
+    // Make sure this is not directly installed
+//    if (parent) {
+//        if (atomicState?.isInstalled && parent?.state?.okToInstallAutomation == true){
+//            atomicState?.isParent = false;
+//        }
+//    }
+
 }
 
 // TODO: implement event handlers
