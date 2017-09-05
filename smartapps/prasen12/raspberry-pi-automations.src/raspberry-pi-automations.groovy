@@ -16,7 +16,7 @@
 definition(
     name: "Raspberry Pi Automations",
     namespace: "prasen12",
-    parent: "prasen.palvankar@gmail.com:Raspberry Pi (Connect)",
+    parent: "prasen12:Raspberry Pi Connect",
     author: "Prasen Palvankar",
     description: "Automations for services provided by the Raspberry Pi",
     category: "My Apps",
@@ -26,43 +26,81 @@ definition(
 
 
 preferences {
-    section("Which Station to Automate?") {
-        input (name: "station", title: "Station", type: "device.raspberryPiIrrigationStation");
-    }    
-    section("At what time?") {
-        input (name: "startTime", title: "Start Time", type:"time");
-    }
+	page (name: "mainPage")
+    page (name: "schedulePage")
+    page(name: "notAllowedPage")
+    
 }
 
 def installed() {
-	log.debug "Installed with settings: ${settings}"        
+	log.debug "Installed with settings: ${settings}"               
 	initialize()
 }
 
 def updated() {
 	log.debug "Updated with settings: ${settings}"
-
+	unschedule()
 	unsubscribe()
 	initialize()
 }
 
 def initialize() {
-	// TODO: subscribe to attributes, devices, locations, etc.
-        state.t ="D";
+	 def device = parent.getServiceDevice(station);
+    log.debug "Service Device = ${device}"   
+	app.updateLabel("Automation for ${device}");
+    schedule(startTime, startSprinkler);
+    schedule(endTime, stopSprinkler);
 }
 
+def startSprinkler() {
+	log.debug "Start sprinkler called"
+    parent.getServiceDevice(station).on()
+}
+
+def stopSprinkler() {
+	log.debug "Stop sprinkler called"
+    parent.getServiceDevice(station).off()
+}
 /**
  * Pages
  */
 
 def mainPage() {
     // Make sure this is not directly installed
-//    if (parent) {
-//        if (atomicState?.isInstalled && parent?.state?.okToInstallAutomation == true){
-//            atomicState?.isParent = false;
-//        }
-//    }
+    if (parent) {
+    	schedulePage()
+      } 
+    else {
+    	notAllowedPage()
+    }
 
 }
 
+def notAllowedPage () {
+	dynamicPage(name: "notAllowedPage", title: "This install Method is Not Allowed", install: false, uninstall: true) {
+		section() {
+			paragraph "Raspberry Pi Automations can't be directly installed from the Marketplace.\n\nPlease use the Raspberry Pi Connect SmartApp to configure them.", required: true,
+			state: null, image: getAppImg("disable_icon2.png")
+		}
+	}
+}
+
+def schedulePage() {
+	dynamicPage(name: "schedulePage", title: "Sprinkler Schedule", install: true, uninstall: true) {    	
+                section("Which Station to Automate?") {
+                	input (name: "station", title: "Station", type: "device.raspberryPiIrrigationStation");
+            	}    
+            	section("At what time?") {
+                	input (name: "startTime", title: "Start Time", type:"time");
+            	}
+                section("At what time do you want it turned off?") {
+                	input (name: "endTime", title: "Turn off at", type: "time");
+                }
+                section("Which days?") {
+                	input "days", "enum", multiple: true, title: "Run on specific day(s)", description: "Choose Days", required: true, options: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]				
+                }
+               
+		   	
+        }
+}
 // TODO: implement event handlers
