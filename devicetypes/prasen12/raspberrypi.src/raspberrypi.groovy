@@ -17,21 +17,51 @@ metadata {
 	definition (name: "RaspberryPi", namespace: "prasen12", author: "Prasen Palvankar") {
 		capability "Actuator"		
 		capability "Switch"
+        capability "Refresh"
         
         attribute "cpuTemp", "number"
         attribute "cpuLoad", "number"
+        attribute "freeMem", "number"       
+        attribute "totalMem", "number"
+        
+        command	"reboot"
 	}
 
 
-	tiles(scale:2 ){
+	tiles(scale:2){
     
-    		standardTile("switchTile", "device.switch", width: 6, height: 4,
+    		/**
+    		standardTile("switchTile", "device.switch", width: 3, height: 4,
                  canChangeIcon: true) {
                 state "off", label: '${name}', action: "switch.on",
                       icon: "st.Outdoor.outdoor13", backgroundColor: "#ffffff"
                 state "on", label: '${name}', action: "switch.off",
                       icon: "st.Outdoor.outdoor13", backgroundColor: "#E60000"
     		}
+            **/
+          valueTile("title1", "device.text", width: 2, height: 2) {
+        		state "val", defaultState: true, icon: "https://www.raspberrypi.org/app/uploads/2011/10/Raspi-PGB001.png"
+    		}
+          standardTile("reboot", "command.reboot", width: 2, height: 2, inactiveLabel: false) {
+				state "default", label: "Reboot", action:"reboot", icon:"st.secondary.activity", backgroundColor: "#FF0000"
+			}
+          standardTile("refresh", "command.refresh", width: 2, height: 2, inactiveLabel: false) {
+				state "default", action:"refresh.refresh", icon:"st.secondary.refresh", backgroundColor: "#42BF34"
+			}
+          valueTile("cpuTemp", "device.cpuTemp", width: 2, height: 2) {
+        		state "val", label:'${currentValue}\nF', defaultState: true, backgroundColor: "#00a0dc"
+    		}
+          	valueTile("totalMem", "device.totalMem", width: 2, height: 2) {
+        		state "val", label:'${currentValue}', defaultState: true, backgroundColor: "#A55A5A"
+    		}
+            valueTile("freeMem", "device.freeMem", width: 2, height: 2) {
+        		state "val", label:'${currentValue}', defaultState: true, backgroundColor: "#A55A5A"
+    		}
+           valueTile("cpuLoad", "device.text", width: 6, height: 2) {
+        		state "val", label:'Services', defaultState: true
+    		}
+           
+   
           
           
            childDeviceTile("irrigationStation1", "irrigationStation1", height: 4, width: 6, childTileName: "irrigationStation")
@@ -54,6 +84,8 @@ def parse(String description) {
 
 	def cpuEvent;
     def loadEvent;
+    def freeMemEvent;
+    def totalMemEvent;
     
     if (json) {
     	
@@ -64,8 +96,11 @@ def parse(String description) {
             case ('pi.health'):
                 log.debug("Creating cpu data events, temp = ${json.data.cpuTemp}");
                 cpuEvent = createEvent(name: "cpuTemp", value: json.data.cpuTemp);
-                loadEvent = createEvent(name: "cpuLoad", value: json.data.load.last1);
+                loadEvent = createEvent(name: "cpuLoad", value: (String.format("Load Avg\n\n%1.4f\nLast 1 Minute", json.data.load.last1)));
+                freeMemEvent = createEvent(name: "freeMem", value: (String.format("%4.0f MB\nFree", (json.data.freeMem/1024/1024))));                
+                totalMemEvent = createEvent(name: "totalMem", value: (String.format("%4.0f MB\nTotal", (json.data.totalMem/1024/1024))));
                 break;
+                /**
             case ('controller.irrigation.stations'):
                 log.debug "Received list of irrigation stations ${json.data}, child devices created = ${state.childDevicesCreated}"
                 if (getChildDevices().size() == 0){
@@ -74,6 +109,7 @@ def parse(String description) {
                     state.childDevicesCreated = true;
                 }
                 break;
+                **/
             case ('controller.irrigation.state'):
                 log.debug "Received state for irrigation station ${json.data}"
                 log.debug ("Child devices = ${state.childDevices}, ${state.createdDevices}")
@@ -89,9 +125,10 @@ def parse(String description) {
         }
     
 	}
-    return [cpuEvent, loadEvent]
+    return [cpuEvent, loadEvent, freeMemEvent, totalMemEvent]
 }
 
+/**
 def createChildDevices(stations, createdDevices) {
 	log.debug("createChildDevices()");
 	for (station in stations) {
@@ -105,19 +142,10 @@ def createChildDevices(stations, createdDevices) {
       childDevice.sendEvent(name: "stationName", value: station.name)
     }
 }
-
+*/
 
 
 // handle commands
-def capture() {
-	log.debug "'capture' not implemented"
-	// TODO: handle 'capture' command
-}
-
-def take() {
-	log.debug "'take' not implemented"
-	// TODO: handle 'take' command
-}
 
 def on() {
 	log.debug "Executing 'on' , device.switch = ${state['switch']}"
@@ -133,16 +161,20 @@ def off() {
 	return executeActions("off")
 }
 
-def open() {
-	log.debug "'open' not implemented"
-	// TODO: handle 'open' command
+def refresh() {
+	log.debug "Executing refresh()"
+    def children = getChildDevices()
+    children.each { child -> 
+    	log.debug "Initiaing refresh on -- ${child.displayName}"
+        child.refresh()
+    }
+	getRPiHealth()
 }
 
-def close() {
-	log.debug "'close' not implemented"
-	// TODO: handle 'close' command
+def reboot() {
+	log.debug "Excuting reboot()"
+    
 }
-
 // Setup child devices on being installed
 def installed() {
 	log.debug "Setting up child devices"
@@ -150,13 +182,14 @@ def installed() {
     state.childDevicesCreated = false;
    	log.debug("Selected services = ${parent.getSelectedServices()}")
     
- 
+ 	getRPiHealth()
    createChildDevices1()
 }
 
 def createChildDevices1() {	
+	log.debug("createChildDevices()")
 	def selectedServices = parent.getSelectedServices()
-	log.debug "crateChidDevices1(${selectedServices})"
+	log.debug "createChidDevices1(${selectedServices})"
 	def services = parent.getServices();
   	 log.debug "All services from parent = ${services}"
      	 log.debug "selected service 0 = ${selectedServices[0]}"
@@ -179,7 +212,7 @@ def createChildDevices1() {
       			childDevice.sendEvent(name: "serviceId", value: service.id);
                 childDevice.sendEvent(name: "serviceName", value: service.name)
                 childDevice.updateStatus(service.id);
-                
+                parent.setServiceDevice(childDevice);
             }
         
         	
@@ -206,69 +239,19 @@ def updated() {
     
 }
 
-def turnStationOn(station) {
-	log.debug "Turning station on "
-    def hubAction = new physicalgraph.device.HubAction(
-    	method: "PUT",      
-        path: "/api/irrigation/stations/${station}",
-        headers: [
-        	HOST: getHost()
-        ],
-        body: [
-        	action: "on"
+def getRPiHealth() {
+	 def hubAction = new physicalgraph.device.HubAction(
+    	[
+    		method: "GET",      
+        	path: "/api/pi/health",
+        	headers: [
+        		HOST: getHost()
+        	]
         ]
     )
     log.debug("Action ${hubAction}");
    	sendHubCommand(hubAction)
-}
 
-def turnStationOff(station) {
-	log.debug "Turning station off "
-   def hubAction = new physicalgraph.device.HubAction(
-    	[method: "PUT",      
-        path: "/api/irrigation/stations/${station}",
-        headers: [
-        	HOST: getHost()
-        ],
-        body: [
-        	action: "off"
-        ]
-        
-        ]
-    )
-    log.debug("Action ${hubAction}");
-  	sendHubCommand(hubAction)
-}
-
-def executeActions(action) {
-	def method= "GET"
-    def path = "/api/irrigation/stations/station1"
-          
-    log.debug("Invoking Rpi method = ${method}, path = ${path}")
-	def result = new physicalgraph.device.HubAction(
-    	method: method,      
-        path: path,
-        headers: [
-        	HOST: getHost()
-        ]
-    )
-    log.debug "executeActions ${result}"
-    return result
-    
-}
-
-def getStations() {
-	log.debug "getStations()"
-	def hubAction = new physicalgraph.device.HubAction(
-    	method: "GET",      
-        path: "/api/irrigation/stations",
-        headers: [
-        	HOST: getHost()
-        ]
-    )
-	log.debug "getStations hubAction = ${hubAction}"
-	sendHubCommand(hubAction)
-    
 }
 
 def getHost() {
@@ -277,4 +260,9 @@ def getHost() {
     	return "10.0.0.36:9000"
     else
 		return(getDataValue("ip") + ":" + getDataValue("port"));
+}
+
+def getServiceDevice(objId) {
+	def devices = getChildDevices()
+    return devices.find( {it.id == objId} )
 }
