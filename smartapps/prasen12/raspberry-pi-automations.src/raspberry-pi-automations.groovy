@@ -48,88 +48,89 @@ def initialize() {
     def device = parent.getServiceDevice(station);
     log.debug "Service Device = ${device}"   
     app.updateLabel("Automation for ${device}");
-    schedule(startTime, startSprinkler);
-    
+    schedule(buildCrontabEntry(startTime), startSprinkler);
+    schedule(buildCrontabEntry(endTime), stopSprinkler);
 }
 
 def startSprinkler() {
     log.debug "Start sprinkler called"
-    def df = new java.text.SimpleDateFormat("EEEE")
-    // Ensure the new date object is set to local time zone
-    df.setTimeZone(location.timeZone)
-    def day = df.format(new Date())
-    def dayCheck = days.contains(day);
-    if (dayCheck) {
-        def sprinkler = parent.getServiceDevice(station);
-        log.debug "Turning on sprinkler ${sprinkler.displayName}"
-        schedule(endTime, stopSprinkler);
-        sprinkler.on()
-    }
+    def sprinkler = parent.getServiceDevice(station);
+    log.info "Turning on sprinkler ${sprinkler.displayName}"        
+    sprinkler.on()
+}
 }
 
 def stopSprinkler() {
     log.debug "Stop sprinkler called"
-    parent.getServiceDevice(station).off()
+    def sprinkler = parent.getServiceDevice(station);
+    log.info "Turning off sprinkler ${sprinkler.displayName}"        
+    sprinkler.off()
 }
 /**
- * Pages
- */
+* Pages
+*/
 
 def mainPage() {
-    // Make sure this is not directly installed
-    if (parent) {
-    	schedulePage()
-    } 
-    else {
-    	notAllowedPage()
-    }
+// Make sure this is not directly installed
+if (parent) {
+    schedulePage()
+} 
+else {
+    notAllowedPage()
+}
 
 }
 
 def notAllowedPage () {
-    dynamicPage(name: "notAllowedPage", title: "This install Method is Not Allowed", install: false, uninstall: true) {
-        section() {
-            paragraph "Raspberry Pi Automations can't be directly installed from the Marketplace.\n\nPlease use the Raspberry Pi Connect SmartApp to configure them.", required: true,
-            state: null, image: getAppImg("disable_icon2.png")
-        }
+dynamicPage(name: "notAllowedPage", title: "This install Method is Not Allowed", install: false, uninstall: true) {
+    section() {
+        paragraph "Raspberry Pi Automations can't be directly installed from the Marketplace.\n\nPlease use the Raspberry Pi Connect SmartApp to configure them.", required: true,
+        state: null, image: getAppImg("disable_icon2.png")
     }
+}
 }
 
 def schedulePage() {
-    dynamicPage(name: "schedulePage", title: "Sprinkler Schedule", install: true, uninstall: true) {   
-        section("Which Station to Automate?") {
-            input (name: "station", title: "Station", type: "device.raspberryPiIrrigationStation");
-            input (name: "automationName", title: "Automation Name", type: "string")
-        }    
-        section("Schedule") {
-            input (name: "startTime", title: "Start Time", type:"time")
-            input (name: "endTime", title: "Turn off at", type: "time");
-            input (name: "scheduleDays", type: "enum", multiple: true, title: "Run on specific day(s)", description: "Choose Days", required: true, options: getWeekDays());			
-        }
-        section("Don't turn on the sprinkler if ... ") {
-            input (name: "skipOnRainDay", title: "Rain in forecast for the scheduled day", type: "boolean", required: false)
-            input (name: "skipIfRained", title: "It has rained  between 1 and 7 days ago", type: "number", range: "1..7", required: false)                        
-        }
-        section("Increase the sprinkler time if ...") {
-            input (name: "incrementDuration", title: "Temperature forecast is for scheduled day is greater than ", type: "number", required: false)
-        }
+dynamicPage(name: "schedulePage", title: "Sprinkler Schedule", install: true, uninstall: true) {   
+    section("Which Station to Automate?") {
+        input (name: "station", title: "Station", type: "device.raspberryPiIrrigationStation");
+        input (name: "automationName", title: "Automation Name", type: "string")
+    }    
+    section("Schedule") {
+        input (name: "startTime", title: "Start Time", type:"time")
+        input (name: "endTime", title: "Turn off at", type: "time");
+        input (name: "scheduleDays", type: "enum", multiple: true, title: "Run on specific day(s)", description: "Choose Days", required: true, options: getWeekDays());			
+    }
+    section("Don't turn on the sprinkler if ... ") {
+        input (name: "skipOnRainDay", title: "Rain in forecast for the scheduled day", type: "boolean", required: false)
+        input (name: "skipIfRained", title: "It has rained  between 1 and 7 days ago", type: "number", range: "1..7", required: false)                        
+    }
+    section("Increase the sprinkler time if ...") {
+        input (name: "incrementDuration", title: "Temperature forecast is for scheduled day is greater than ", type: "number", required: false)
+    }
                
 		   	
-    }
+}
 }
 
-def buildCronrabSchedule(){
-    def d = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").parse(startTime);
-    d.setTimeZone(location.timeZone);
+def buildCrontabEntry(){
+def d = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").parse(startTime);
+d.setTimeZone(location.timeZone);
+def cronEntry = new java.text.SimpleDateFormat("'0 'mm' 'HH' ? * '").format(d)
+scheduleDays.eachWithIndex ({ day, idx ->
+        def wd = getWeekDays().indexOf(day);
+        if (wd != -1) {
+            if (idx > 0) {
+                cronEntry = cronEntry + ","
+            }
+            cronEntry = cronEntry + (wd+1)
+        }
+    })
+return cronEntry
+
     
-    def a = ​new java.text.SimpleDateFormat("'0 'mm​' 'HH' * '")​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​.format(d)​
-    def days = [];
-    scheduleDays.each {
-        
-    }
-    def days = getWeekDays().indexOf()
 }
 
 def getWeekDays() {
-    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 }
