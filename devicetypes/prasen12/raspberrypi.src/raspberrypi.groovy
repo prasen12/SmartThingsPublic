@@ -57,10 +57,11 @@ metadata {
             valueTile("freeMem", "device.freeMem", width: 2, height: 2) {
         		state "val", label:'${currentValue}', defaultState: true, backgroundColor: "#A55A5A"
     		}
+            /**
            valueTile("cpuLoad", "device.text", width: 6, height: 2) {
         		state "val", label:'Services', defaultState: true
     		}
-           
+           */
    
           
           
