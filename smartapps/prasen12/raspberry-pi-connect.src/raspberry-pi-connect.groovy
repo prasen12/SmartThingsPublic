@@ -508,9 +508,9 @@ def mainPage()   {
         }
         
         if (selectedServices != null) {
-        	section("Automations") {            	
+        	section("Create Automations") {            	
             		
-    				app(name: "automationApp", appName: "Raspberry Pi Automations", namespace: "prasen12", title: "Create New Raspberry Pi Automation", multiple: true)    			  
+    				app(name: "automationApp", appName: "Raspberry Pi Sprinkler Automations", namespace: "prasen12", title: "Create New Sprinkler Automation", multiple: true)    			  
             }
         
         }
