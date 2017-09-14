@@ -57,6 +57,9 @@ def startSprinkler() {
     def sprinkler = parent.getServiceDevice(station);
     log.info "Turning on sprinkler ${sprinkler.displayName}"        
     sprinkler.on()
+    if (pushNotifyOnStart) {
+        sendPush("Turning on sprinkler ${sprinkler.displayName}")
+    }
 }
 
 def stopSprinkler() {
@@ -64,6 +67,9 @@ def stopSprinkler() {
     def sprinkler = parent.getServiceDevice(station);
     log.info "Turning off sprinkler ${sprinkler.displayName}"        
     sprinkler.off()
+    if (pushNotifyOnStop) {
+        sendPush("Turning off sprinkler ${sprinkler.displayName}")
+    }
 }
 /**
 * Pages
@@ -106,6 +112,10 @@ dynamicPage(name: "schedulePage", title: "Sprinkler Schedule", install: true, un
     }
     section("Increase the sprinkler time if ...") {
         input (name: "incrementDuration", title: "Temperature forecast is for scheduled day is greater than ", type: "number", required: false)
+    }
+    section("Notifications") {
+        input (name: "pushNotifyOnStart", title: "Send push notification when sprinklers are started?", required: false, type: "bool")
+        input (name: "pushNotifyOnStop", title: "Send push notification when sprinklers are stopped?", required: false, type: "bool")
     }
                
 		   	
