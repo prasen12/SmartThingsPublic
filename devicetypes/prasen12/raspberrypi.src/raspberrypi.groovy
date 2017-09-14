@@ -194,9 +194,9 @@ def installed() {
     state.childDevicesCreated = false;
     log.debug("Selected services = ${parent.getSelectedServices()}")
     
-    getRPiHealth()
+    refresh()
     createChildDevices1()
-    state.refreshed = true;
+    
 }
 
 def createChildDevices1() {	
