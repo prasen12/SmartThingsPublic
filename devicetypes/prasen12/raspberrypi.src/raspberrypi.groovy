@@ -89,6 +89,7 @@ def parse(String description) {
     def loadEvent;
     def freeMemEvent;
     def totalMemEvent;
+    def connectStatusEvent;
     
     if (json) {
     	
