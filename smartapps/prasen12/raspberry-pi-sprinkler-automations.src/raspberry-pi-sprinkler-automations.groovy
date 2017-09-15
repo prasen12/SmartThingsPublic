@@ -50,6 +50,8 @@ def initialize() {
     app.updateLabel("Sprinkler Automation: ${automationName}");
     schedule(buildCrontabEntry(startTime), startSprinkler);
     schedule(buildCrontabEntry(endTime), stopSprinkler);
+    def weather = getWeatherFeature("forecast")
+    log.debug("Weather ${weather}")
 }
 
 def startSprinkler() {
