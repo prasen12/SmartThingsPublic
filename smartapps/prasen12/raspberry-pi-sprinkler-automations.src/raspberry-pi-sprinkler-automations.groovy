@@ -51,8 +51,10 @@ def initialize() {
     schedule(buildCrontabEntry(startTime), startSprinkler);
     schedule(buildCrontabEntry(endTime), stopSprinkler);
     def weather = getWeatherFeature("forecast")
-    def forecastDay = weather.simpleforecast.forecastday[0]
+    def forecastDay = weather.forecast.simpleforecast.forecastday[0]
     log.debug("Weather for ${forecastDay.date.pretty} - High ${forecastDay.high.fahrenheit}")
+    def forecastDay2 = weather.forecast.simpleforecast.forecastday[1]
+    log.debug("Weather for ${forecastDay2.date.pretty} - High ${forecastDay2.high.fahrenheit}")
 }
 
 def startSprinkler() {
